@@ -43,13 +43,25 @@ const TOOLS: Tool[] = [
   },
   {
     name: "puppeteer_click",
-    description: "Click an element on the page",
+    description: "Click an element on the page. Special selector syntax is supported: elementType:contains('text') to click elements containing specific text (e.g., button:contains('Submit'))",
     inputSchema: {
       type: "object",
       properties: {
-        selector: { type: "string", description: "CSS selector for element to click" },
+        selector: { type: "string", description: "CSS selector for element to click, or special selector like button:contains('text')" },
       },
       required: ["selector"],
+    },
+  },
+  {
+    name: "puppeteer_find_button",
+    description: "Find a button by its text content and click it",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "The text content to search for in buttons" },
+        exact: { type: "boolean", description: "Whether to match the text exactly or use partial matching (default: false)" },
+      },
+      required: ["text"],
     },
   },
   {
@@ -189,8 +201,116 @@ async function handleToolCall(name: string, args: any): Promise<CallToolResult> 
       };
     }
 
+    case "puppeteer_find_button":
+      try {
+        const buttonText = args.text;
+        const exactMatch = args.exact === true;
+        
+        // Find all buttons on the page
+        const buttons = await page.$$('button, [role="button"], input[type="button"], input[type="submit"], a.btn, a[role="button"]');
+        
+        // Try to find the button with matching text
+        let found = false;
+        let buttonElement = null;
+        
+        for (const button of buttons) {
+          const textContent = await page.evaluate(el => {
+            // Handle different element types (including input elements that use value instead of textContent)
+            return el.textContent || (el as HTMLInputElement).value || '';
+          }, button);
+          
+          if ((exactMatch && textContent === buttonText) || 
+              (!exactMatch && textContent.includes(buttonText))) {
+            buttonElement = button;
+            found = true;
+            break;
+          }
+        }
+        
+        if (found && buttonElement) {
+          // Ensure the button is visible and clickable
+          await page.evaluate(el => {
+            if (el.scrollIntoView) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, buttonElement);
+          
+          // Wait a moment for scrolling to complete
+          await new Promise(r => setTimeout(r, 100));
+          
+          // Click the button
+          await buttonElement.click();
+          
+          return {
+            content: [{
+              type: "text",
+              text: `Clicked button with text: "${buttonText}"`,
+            }],
+            isError: false,
+          };
+        } else {
+          return {
+            content: [{
+              type: "text",
+              text: `Button with text "${buttonText}" not found`,
+            }],
+            isError: true,
+          };
+        }
+      } catch (error) {
+        return {
+          content: [{
+            type: "text",
+            text: `Failed to find or click button with text "${args.text}": ${(error as Error).message}`,
+          }],
+          isError: true,
+        };
+      }
+
     case "puppeteer_click":
       try {
+        // Check if the selector is a text-based selector like "button:contains('Text')"
+        if (args.selector.includes(":contains(")) {
+          // Extract the text and element type from the selector
+          const match = args.selector.match(/(\w+):contains\(['"](.+)['"]\)/);
+          if (match) {
+            const [_, elementType, text] = match;
+            
+            // First, find all elements with the given tag
+            const elements = await page.$$(elementType);
+            
+            // Find one that contains the text
+            let found = false;
+            for (const element of elements) {
+              const textContent = await page.evaluate(el => el.textContent, element);
+              if (textContent && textContent.includes(text)) {
+                await element.click();
+                found = true;
+                break;
+              }
+            }
+            
+            if (found) {
+              return {
+                content: [{
+                  type: "text",
+                  text: `Clicked ${elementType} containing text: ${text}`,
+                }],
+                isError: false,
+              };
+            } else {
+              return {
+                content: [{
+                  type: "text",
+                  text: `Element ${elementType} containing text "${text}" not found`,
+                }],
+                isError: true,
+              };
+            }
+          }
+        }
+        
+        // Standard CSS selector
         await page.click(args.selector);
         return {
           content: [{

@@ -21,6 +21,8 @@ A Model Context Protocol server that provides browser automation capabilities us
 - **puppeteer_click**
   - Click elements on the page
   - Input: `selector` (string): CSS selector for element to click
+  - Supports special selector syntax: `elementType:contains('text')` for finding elements by text content
+  - Example: `button:contains('Submit')` will find and click a button containing "Submit" text
 
 - **puppeteer_hover**
   - Hover elements on the page
@@ -41,6 +43,12 @@ A Model Context Protocol server that provides browser automation capabilities us
 - **puppeteer_evaluate**
   - Execute JavaScript in the browser console
   - Input: `script` (string): JavaScript code to execute
+
+- **puppeteer_find_button**
+  - Find a button by its text content and click it
+  - Inputs:
+    - `text` (string): The text content to search for in buttons
+    - `exact` (boolean, optional, default: false): Whether to match the text exactly or use partial matching
 
 ### Resources
 
